@@ -13,9 +13,9 @@ pipeline {
                 BuildImage(imageRepo: env.IMAGE_REPO, credentialsId: 'dockerhub-creds')
             }
         }
-        stage('Update GitOps Manifest') {
+        stage('Update Deployment') {
             steps {
-                DeployOnK8s(imageRepo: env.IMAGE_REPO, githubCredentialsId: 'github-write-creds')
+                UpdateDeployment(imageRepo: env.IMAGE_REPO, githubCredentialsId: 'github-write-creds')
             }
         }
     }

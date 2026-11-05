@@ -44,7 +44,7 @@ The GitOps version does not require Jenkins to have a kubeconfig: it pushes a Gi
 
 1. `Build App` calls `BuildApp()`: installs npm dependencies, runs `npm test`, and checks `server.js` syntax.
 2. `Build, Scan, Push Image` calls `BuildImage()`: builds an image tagged with `BUILD_NUMBER`, runs a Trivy vulnerability scan, logs in using `dockerhub-creds`, pushes the tag, logs out, and removes the local tag.
-3. `Update GitOps Manifest` calls `DeployOnK8s()`: updates the image tag in `k8s/deployment.yaml`, commits it, and pushes `HEAD:main` using `github-write-creds`.
+3. `Update Deployment` calls `UpdateDeployment()`: updates the image tag in `k8s/deployment.yaml`, commits it, and pushes `HEAD:main` using `github-write-creds`.
 
 `--exit-code 0` means Trivy reports findings without failing the pipeline. To make high/critical findings block a release, change the exit-code policy after discussing the lab requirement.
 

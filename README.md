@@ -116,13 +116,13 @@ The root `Jenkinsfile` runs these stages on a configured Jenkins agent:
 
 1. **Build App** — install dependencies, run unit tests, and check JavaScript syntax.
 2. **Build, Scan, Push Image** — build an image tagged with the Jenkins build number, scan it with Trivy, and push it to Docker Hub.
-3. **Update GitOps Manifest** — update the image tag in `k8s/deployment.yaml`, commit the change, and push it to the `main` branch.
+3. **Update Deployment** — update the image tag in `k8s/deployment.yaml`, commit the change, and push it to the `main` branch.
 
 Reusable steps are defined under `vars/`:
 
 - `BuildApp.groovy`
 - `BuildImage.groovy`
-- `DeployOnK8s.groovy`
+- `UpdateDeployment.groovy`
 
 Configure a Jenkins Global Pipeline Library named `ivolve-gitops`, pointing to this repository and the `main` branch. Configure an inbound agent whose label matches the Jenkinsfile. The agent needs Git, Node.js/npm, Docker access, and Trivy.
 
