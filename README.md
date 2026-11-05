@@ -44,7 +44,6 @@ Jenkins owns the build and image-publishing workflow. Argo CD owns the deploymen
 ├── docs/                   # Setup, operation, and troubleshooting guides
 ├── frontend/               # Static web interface and assets
 ├── k8s/                    # GitOps-managed application resources
-├── kubernetes-labs/        # Reference manifests from earlier exercises
 ├── vars/                   # Jenkins Shared Library functions
 ├── Dockerfile              # Application image build
 ├── docker-compose.yml      # Local application and database services
