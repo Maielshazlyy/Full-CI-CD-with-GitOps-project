@@ -27,7 +27,7 @@ Browse from the same machine/tunnel context to `https://localhost:8081`. If Kube
 
 ## Create the `ivolve` Application
 
-Use `argocd/application.yaml` after replacing the repository placeholder, or fill the same values in the UI:
+The `argocd/application.yaml` template is already set to the project repository; verify its URL, or fill the same values in the UI:
 
 - Name: `ivolve`
 - Project: `default`

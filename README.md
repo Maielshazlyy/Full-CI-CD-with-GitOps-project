@@ -70,7 +70,7 @@ See [`docs/04-jenkins-ci.md`](docs/04-jenkins-ci.md).
 
 ## Argo CD setup
 
-Install Argo CD in the `argocd` namespace and create the Application using [`argocd/application.yaml`](argocd/application.yaml) or the Argo CD UI. Set the repository to this new repository, revision `main`, path `k8s`, destination cluster `in-cluster`, and destination namespace `ivolve`. Enable automated synchronization and self-heal. Replace `<GITHUB_OWNER>/<REPOSITORY_NAME>` before applying the template. Do not create a second `ivolve` Application if one already exists.
+Install Argo CD in the `argocd` namespace and create the Application using [`argocd/application.yaml`](argocd/application.yaml) or the Argo CD UI. Set the repository to this new repository, revision `main`, path `k8s`, destination cluster `in-cluster`, and destination namespace `ivolve`. Enable automated synchronization and self-heal. The repository URL is already set to the new GitHub repository. Do not create a second `ivolve` Application if one already exists.
 
 After Jenkins commits an updated image tag, Argo CD should detect the new Git revision and report **Synced** and **Healthy** after Kubernetes rolls out Ready Pods. See [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md).
 
