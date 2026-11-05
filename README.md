@@ -54,7 +54,7 @@ Jenkins owns the build and image-publishing workflow. Argo CD owns the deploymen
 └── package.json            # Dependencies and test commands
 ```
 
-The Argo CD application watches only `k8s/`. Supporting cluster resources—namespace, database, credentials, and persistent volumes—are configured separately. Historical manifests are kept outside the watched directory to prevent duplicate or unrelated resources from being applied automatically.
+The Argo CD application watches `k8s/`, which contains only the final application Deployment, Service, and NetworkPolicy. Supporting cluster resources—namespace, database, credentials, and persistent volumes—must already exist in the cluster and are configured separately.
 
 ## Local development
 
