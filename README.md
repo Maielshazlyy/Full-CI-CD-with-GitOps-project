@@ -158,13 +158,7 @@ kubectl get deployment ivolveapp -n ivolve \
 
 See [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md) for application setup and troubleshooting.
 
-## Security and operations
 
-- Never commit `.env`, populated Kubernetes Secrets, kubeconfig files, AWS private keys, cluster join tokens, Jenkins agent secrets, or registry access tokens.
-- The repository includes only a placeholder Secret example. Supply actual database credentials securely in the cluster.
-- Restrict SSH and Kubernetes API access to trusted sources.
-- The small EC2 nodes have limited memory and CPU. Run only the components needed for the current workflow and stop instances when they are no longer needed.
-- Review Jenkins and Argo CD logs when a pipeline or synchronization fails; confirm the Git manifest push succeeded before troubleshooting cluster reconciliation.
 
 ## Documentation
 
