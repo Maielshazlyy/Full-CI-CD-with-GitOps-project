@@ -1,92 +1,181 @@
-# Full CI/CD with GitOps Project
+# Full CI/CD with GitOps
 
-A single end-to-end learning project connecting the Node.js/MySQL app from Docker Compose Lab 8 to a kubeadm Kubernetes cluster, Jenkins CI with a dedicated agent and Shared Library, and Argo CD continuous delivery.
+An end-to-end reference project for building, packaging, testing, scanning, and deploying a Node.js application backed by MySQL. It combines Docker Compose for local development, Kubernetes for orchestration, Jenkins for continuous integration, and Argo CD for GitOps-based delivery.
 
-## Learning path
+## Overview
 
-1. **Docker Compose:** run the Node.js app and MySQL as two services; understand networking, health checks, and persistent named volumes.
-2. **Kubernetes cluster:** prepare two Ubuntu EC2 machines, configure containerd and kubeadm, initialize a control plane, install Calico, and join the worker.
-3. **Kubernetes YAML:** define namespace/quota, ConfigMap and Secret, PV/PVC, MySQL StatefulSet and Service, app Deployment and Service, resource limits, NetworkPolicy, monitoring, and RBAC.
-4. **Jenkins CI:** use a Jenkins controller, an online `lab22-agent`, a declarative Jenkinsfile, and reusable functions in the `vars/` Shared Library.
-5. **Argo CD GitOps:** Jenkins pushes the newly built image tag into the Git manifest; Argo CD watches `k8s/` and automatically synchronizes the change to the cluster.
+The application and database run as separate services. Jenkins builds and tests the application, creates and scans a container image, and publishes the image to Docker Hub. It then updates the Kubernetes manifest in Git. Argo CD watches the repository and reconciles the cluster to the committed configuration.
 
 ## Architecture
 
-```text
-Git commit -> Jenkins controller -> lab22-agent -> test/build -> Trivy scan
-                                                    |               |
-                                                    |               +-> Docker Hub image tag
-                                                    +-> commit image tag to Git
-                                                                     |
-Argo CD watches Git path k8s/ <--------------------------------------+
-       |
-       +-> reconciles Kubernetes Deployment + Service -> app Pods -> MySQL
+```mermaid
+flowchart LR
+    Dev[Developer] -->|Commit| Git[GitHub repository]
+    Git --> Jenkins[Jenkins controller]
+    Jenkins --> Agent[Build agent]
+    Agent --> Test[Install, test, build]
+    Test --> Scan[Trivy image scan]
+    Scan --> Registry[Docker Hub]
+    Agent -->|Commit updated image tag| Git
+    Git -->|Monitor k8s/| Argo[Argo CD]
+    Argo -->|Reconcile desired state| K8s[Kubernetes cluster]
+    K8s --> App[Node.js application]
+    App --> DB[MySQL database]
 ```
 
-Jenkins builds and publishes images and updates the desired manifest in Git. Argo CD is the component that applies GitOps changes to Kubernetes. The database, ConfigMap, Secret, and persistent storage are prerequisites created by the earlier Kubernetes labs.
+Jenkins owns the build and image-publishing workflow. Argo CD owns the deployment reconciliation. The Git manifest is the source of truth for the application Deployment, Service, and NetworkPolicy.
 
-## Repository contents
+## Technology stack
 
-- `Dockerfile`, `docker-compose.yml`, `server.js`, `db.js`, `frontend/`: Lab 8 Node.js/MySQL application and local container setup.
-- `.env.example`: placeholder template for local-only Compose values. Copy it to `.env`; `.env` is ignored by Git.
-- `kubernetes-labs/Lab11`–`Lab19`: safe historical/reference manifests and README files. The real `secret.yaml` is deliberately excluded.
-- `k8s/`: the final app Deployment, ClusterIP Service, and MySQL NetworkPolicy watched by Argo CD. Keep unrelated lab manifests outside this directory.
-- `Jenkinsfile`, `vars/`, `agent/Dockerfile`: pipeline, reusable Shared Library functions, and agent image definition.
-- `argocd/application.yaml`: template for the Argo CD Application. Replace the repository placeholders before applying it.
-- `docs/`: detailed guides for each phase.
+- **Application:** Node.js, Express, MySQL client, static frontend
+- **Local development:** Docker, Docker Compose, named volumes, bridge networking
+- **Container registry:** Docker Hub
+- **Orchestration:** Kubernetes with kubeadm, containerd, and Calico
+- **Continuous integration:** Jenkins Pipeline, inbound agent, Shared Library
+- **Image security:** Trivy
+- **Continuous delivery:** Argo CD automated synchronization
 
-## Quick start: Docker Compose
+## Repository structure
 
-Run from the project root in PowerShell:
+```text
+.
+├── agent/                  # Jenkins inbound agent image definition
+├── argocd/                 # Argo CD Application manifest
+├── docs/                   # Setup, operation, and troubleshooting guides
+├── frontend/               # Static web interface and assets
+├── k8s/                    # GitOps-managed application resources
+├── kubernetes-labs/        # Reference manifests from earlier exercises
+├── vars/                   # Jenkins Shared Library functions
+├── Dockerfile              # Application image build
+├── docker-compose.yml      # Local application and database services
+├── Jenkinsfile             # CI and GitOps pipeline
+├── db.js                   # Database access
+├── server.js               # HTTP application and health endpoints
+└── package.json            # Dependencies and test commands
+```
+
+The Argo CD application watches only `k8s/`. Supporting cluster resources—namespace, database, credentials, and persistent volumes—are configured separately. Historical manifests are kept outside the watched directory to prevent duplicate or unrelated resources from being applied automatically.
+
+## Local development
+
+### Prerequisites
+
+- Docker Desktop or Docker Engine with Docker Compose
+- PowerShell, Bash, or another terminal
+
+### Start the application
+
+Copy the environment template and replace both placeholder passwords with local values:
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-# Set local DB_PASSWORD and MYSQL_ROOT_PASSWORD values; save and close.
 docker compose config
 docker compose up -d --build
 docker compose ps
 docker compose logs -f app
 ```
 
-Open `http://localhost:3000` and `http://localhost:3000/health`. Stop containers while preserving named volume data with `docker compose down`. `docker compose down -v` deletes the named volumes and their data.
+Open the application at [http://localhost:3000](http://localhost:3000). The `/health` endpoint checks application health and its database connection.
 
-## Kubernetes and kubeadm
+Stop the services while preserving database and log data:
 
-The original lab uses one EC2 control plane and one worker. Keep both nodes on a compatible Ubuntu/Kubernetes/containerd setup. Use the current private IPs and security-group rules, because EC2 public IPs can change after stop/start. Restrict SSH and the Kubernetes API to trusted sources.
+```powershell
+docker compose down
+```
 
-At a high level: disable swap; configure kernel modules and sysctl; install/configure containerd; install matching `kubelet`, `kubeadm`, and `kubectl`; run `kubeadm init` on the control plane with the selected Pod CIDR; configure kubeconfig; install Calico; run the generated `kubeadm join` on the worker; then verify both nodes are Ready. The Pod CIDR must match the CNI configuration. Detailed commands and rationale are in [`docs/02-kubeadm-cluster.md`](docs/02-kubeadm-cluster.md).
+To delete the named volumes and their data as well:
 
-## Jenkins setup
+```powershell
+docker compose down -v
+```
 
-1. Build or prepare the agent using `agent/Dockerfile`. The agent needs Git, Node.js/npm, Docker CLI with access to the Docker daemon, Trivy, and required shell tools.
-2. Create the Jenkins inbound agent named `lab22-agent`, launch it with its connection secret, and verify Jenkins shows it **Online**. Never save the secret in Git.
-3. Configure a Global Pipeline Library named `ivolve-gitops` pointing at this repository's `main` branch. The `vars/` folder must be at the repository root.
-4. Add Jenkins credentials: `dockerhub-creds` (Docker Hub username/token) and `github-write-creds` (GitHub write token for this repository).
-5. Create a Pipeline job using this repository and `Jenkinsfile`, then run it.
-6. Confirm the tests, image build/scan/push, and manifest commit/push all succeed. A GitHub 403 means the GitOps manifest did not update even if the image was pushed.
+The `.env` file is ignored by Git. Never commit real credentials.
 
-See [`docs/04-jenkins-ci.md`](docs/04-jenkins-ci.md).
+## Kubernetes platform
 
-## Argo CD setup
+The cluster consists of a control-plane node and a worker node. kubeadm bootstraps Kubernetes, containerd runs containers, and Calico provides Pod networking. The worker is labeled and tainted so application workloads can be scheduled there using a node selector and matching toleration.
 
-Install Argo CD in the `argocd` namespace and create the Application using [`argocd/application.yaml`](argocd/application.yaml) or the Argo CD UI. Set the repository to this new repository, revision `main`, path `k8s`, destination cluster `in-cluster`, and destination namespace `ivolve`. Enable automated synchronization and self-heal. The repository URL is already set to the new GitHub repository. Do not create a second `ivolve` Application if one already exists.
+The platform guides explain:
 
-After Jenkins commits an updated image tag, Argo CD should detect the new Git revision and report **Synced** and **Healthy** after Kubernetes rolls out Ready Pods. See [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md).
+- Preparing Ubuntu nodes and configuring containerd
+- Installing matching kubeadm, kubelet, and kubectl versions
+- Initializing the control plane, installing Calico, and joining the worker
+- Creating namespace and quota resources
+- Configuring application settings and secrets
+- Provisioning persistent volumes and claims
+- Running MySQL as a StatefulSet with a headless Service
+- Deploying the application with resource settings and a ClusterIP Service
+- Restricting database ingress with NetworkPolicy
+- Adding monitoring and namespace-scoped RBAC
 
-## Security
+Start with [`docs/02-kubeadm-cluster.md`](docs/02-kubeadm-cluster.md), then review [`docs/03-kubernetes-yaml.md`](docs/03-kubernetes-yaml.md). The existing database, ConfigMap, Secret, and storage resources must be ready before deploying the application.
 
-Never commit `.env`, populated Kubernetes Secrets, AWS private keys, kubeconfig files, kubeadm join tokens, Docker Hub/GitHub tokens, or Jenkins agent secrets. Only placeholder secret examples belong in a public repository. The previous EC2 instances are small and incur charges while running; stop them when you have finished the lab and no longer need the cluster.
+## Jenkins continuous integration
 
-## Detailed documentation
+The root `Jenkinsfile` runs these stages on a configured Jenkins agent:
 
-- [01 — Docker Compose and app/DB flow](docs/01-docker-compose.md)
-- [02 — kubeadm cluster setup](docs/02-kubeadm-cluster.md)
-- [03 — Kubernetes YAML labs](docs/03-kubernetes-yaml.md)
-- [04 — Jenkins Shared Library and agent](docs/04-jenkins-ci.md)
-- [05 — Argo CD GitOps](docs/05-argocd-gitops.md)
+1. **Build App** — install dependencies, run unit tests, and check JavaScript syntax.
+2. **Build, Scan, Push Image** — build an image tagged with the Jenkins build number, scan it with Trivy, and push it to Docker Hub.
+3. **Update GitOps Manifest** — update the image tag in `k8s/deployment.yaml`, commit the change, and push it to the `main` branch.
 
-## Official references
+Reusable steps are defined under `vars/`:
+
+- `BuildApp.groovy`
+- `BuildImage.groovy`
+- `DeployOnK8s.groovy`
+
+Configure a Jenkins Global Pipeline Library named `ivolve-gitops`, pointing to this repository and the `main` branch. Configure an inbound agent whose label matches the Jenkinsfile. The agent needs Git, Node.js/npm, Docker access, and Trivy.
+
+Create these Jenkins credentials outside the repository:
+
+- `dockerhub-creds` — Docker Hub username and access token
+- `github-write-creds` — GitHub username and a fine-grained token with repository contents read/write permission
+
+The GitOps pipeline does not need a kubeconfig for deployment: it publishes the desired state to Git, and Argo CD applies it. A successful image push alone does not complete the pipeline; the manifest commit and push must also succeed.
+
+See [`docs/04-jenkins-ci.md`](docs/04-jenkins-ci.md) for agent and credential setup.
+
+## Argo CD continuous delivery
+
+The Application manifest is [`argocd/application.yaml`](argocd/application.yaml). It is configured for:
+
+- Repository: [Full-CI-CD-with-GitOps-project](https://github.com/Maielshazlyy/Full-CI-CD-with-GitOps-project)
+- Revision: `main`
+- Path: `k8s`
+- Destination namespace: `ivolve`
+- Automated synchronization and self-healing
+
+After Jenkins pushes a new manifest commit, Argo CD detects the revision and synchronizes the Deployment. The application should become **Synced** and **Healthy** after Kubernetes makes the new Pods Ready.
+
+Verify the live application and image tag:
+
+```bash
+kubectl get applications.argoproj.io ivolve -n argocd
+kubectl get deployment,pods,service -n ivolve -o wide
+kubectl get deployment ivolveapp -n ivolve \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="ivolve-app")].image}{"\n"}'
+```
+
+See [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md) for application setup and troubleshooting.
+
+## Security and operations
+
+- Never commit `.env`, populated Kubernetes Secrets, kubeconfig files, AWS private keys, cluster join tokens, Jenkins agent secrets, or registry access tokens.
+- The repository includes only a placeholder Secret example. Supply actual database credentials securely in the cluster.
+- Restrict SSH and Kubernetes API access to trusted sources.
+- The small EC2 nodes have limited memory and CPU. Run only the components needed for the current workflow and stop instances when they are no longer needed.
+- Review Jenkins and Argo CD logs when a pipeline or synchronization fails; confirm the Git manifest push succeeded before troubleshooting cluster reconciliation.
+
+## Documentation
+
+- [Docker Compose and application/database flow](docs/01-docker-compose.md)
+- [kubeadm cluster setup](docs/02-kubeadm-cluster.md)
+- [Kubernetes resources and apply order](docs/03-kubernetes-yaml.md)
+- [Jenkins Shared Library and build agent](docs/04-jenkins-ci.md)
+- [Argo CD GitOps delivery](docs/05-argocd-gitops.md)
+
+## Official documentation
 
 - [Docker Compose](https://docs.docker.com/compose/)
 - [Kubernetes kubeadm installation](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
