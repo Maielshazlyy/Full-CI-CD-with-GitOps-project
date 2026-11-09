@@ -226,12 +226,6 @@ This terminal capture records the cluster and application Pods in a running stat
 
 ![Kubernetes nodes and application workloads](docs/images/05-kubernetes-app-running.png)
 
-### Evidence still to capture for the current GitOps run
-
-- Jenkins Stage View showing a successful **Update Deployment** from this repository.
-- Docker Hub **Tags** page showing the same build tag published by Jenkins.
-- Argo CD application details showing this repository, `k8s`, and **Healthy / Synced**.
-- Kubernetes Deployment and Pods showing `2/2` and the matching image tag.
 
 Never include Jenkins agent secrets, tokens, passwords, kubeconfig contents, database Secret values, or private keys in screenshots.
 
