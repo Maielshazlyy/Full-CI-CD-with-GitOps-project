@@ -31,6 +31,16 @@ docker compose logs -f app
 
 Verify `http://localhost:3000`, then `http://localhost:3000/health`. The health route checks the app's database connection.
 
+The application UI, Compose startup, successful MySQL connection, and published image are shown here:
+
+![Application running locally](images/docker-compose-app-browser.png)
+
+![Docker Compose built and started the app and MySQL services](images/docker-compose-up-healthy.png)
+
+![Application connected to the ivolve MySQL database](images/docker-compose-app-db-connection.png)
+
+![Docker Hub repository containing the application image](images/dockerhub-app-image.png)
+
 Stop containers while retaining data:
 
 ```powershell

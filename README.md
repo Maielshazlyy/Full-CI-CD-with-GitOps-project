@@ -93,7 +93,15 @@ Open [http://localhost:3000](http://localhost:3000), then check the health endpo
 docker compose logs -f app
 ```
 
-For a visual record of the local Compose run, add a screenshot here showing `docker compose ps` with both services healthy and the application open at `localhost:3000`.
+The Compose stack built and started successfully, the app connected to MySQL, and the app UI and Docker Hub image were verified:
+
+![Application running locally with Docker Compose](docs/images/docker-compose-app-browser.png)
+
+![Docker Compose services started and healthy](docs/images/docker-compose-up-healthy.png)
+
+![Application connected to MySQL](docs/images/docker-compose-app-db-connection.png)
+
+![Application image available in Docker Hub](docs/images/dockerhub-app-image.png)
 
 Stop the services but keep their data:
 
@@ -131,6 +139,14 @@ kubectl get nodes --show-labels
 kubectl describe node <worker-node-name> | grep -i taints
 ```
 
+Both cluster nodes reached `Ready`, and the Kubernetes system and Calico components were running:
+
+![Control-plane and worker nodes ready](docs/images/kubeadm-cluster-nodes-ready.jpg)
+
+![Kubernetes control-plane and CoreDNS running](docs/images/kubeadm-cluster-components-running.png)
+
+![Calico and Kubernetes system Pods running](docs/images/kubeadm-cluster-verification.png)
+
 The app's `nodeSelector` chooses `project=ivolve`; its toleration permits the `workload=ivolveApp:NoSchedule` taint. These settings control placement but do not add CPU or memory. This lab's small EC2 nodes can become resource constrained, so verify capacity before installing optional monitoring or increasing workloads.
 
 ## 3. Prepare the application namespace and MySQL
@@ -155,7 +171,21 @@ kubectl get statefulset,service,pvc -n ivolve
 kubectl get pods -n ivolve -o wide
 ```
 
+The database StatefulSet and both persistent claims were running and bound. The MySQL client also confirmed that the `ivolve` database exists:
+
+![MySQL StatefulSet and persistent claims](docs/images/mysql-statefulset-pvc-running.png)
+
+![MySQL database verification](docs/images/mysql-database-verified.png)
+
+The application log claim was also bound and verified with a test Pod:
+
+![Application log PVC bound](docs/images/application-log-pvc-bound.png)
+
+![Application log volume write and read test](docs/images/application-log-volume-test.png)
+
 The Deployment's `initialize-database` init container waits for MySQL and ensures the `ivolve` database and application user exist. The application then reads database connection values from the ConfigMap and Secret. The NetworkPolicy allows MySQL ingress on TCP `3306` from Pods labeled `app=ivolveapp`.
+
+![NetworkPolicy allowing app Pods to reach MySQL on port 3306](docs/images/network-policy-applied.jpg)
 
 > ResourceQuota in the lab limits namespace Pods. Keep the database and app replicas within the quota. The Deployment uses `maxSurge: 0` and `maxUnavailable: 1` so a rolling update can replace app Pods without temporarily exceeding the Pod quota.
 
@@ -187,7 +217,9 @@ In Jenkins:
 
 Do not put the agent secret in Git, README, screenshots, or shell history. The `Jenkinsfile` schedules its build on `lab22-agent`.
 
-![Jenkins inbound agent connected](docs/images/01-jenkins-agent-online.png)
+The Jenkins node list confirms that the dedicated inbound agent is online:
+
+![Jenkins inbound agent online](docs/images/jenkins-agent-online.png)
 
 ### Why this agent has no kubectl
 
@@ -229,6 +261,8 @@ Create a **Pipeline** job in Jenkins:
 
 Add the Jenkins Stage View screenshot after a successful run as `docs/images/07-jenkins-pipeline-success.png`. It should show **Build App**, **Build, Scan, Push Image**, and **Update Deployment** green, with the build number visible if possible.
 
+![Successful Jenkins run with the Update Deployment GitOps stage](docs/images/jenkins-pipeline-gitops-success.png)
+
 The pipeline runs on `lab22-agent` in these stages:
 
 1. **Build App** — `BuildApp()` installs npm dependencies, runs `npm test`, and checks JavaScript syntax with `node --check server.js`.
@@ -238,8 +272,6 @@ The pipeline runs on `lab22-agent` in these stages:
 Trivy currently uses `--exit-code 0`: it reports High/Critical vulnerabilities but does not fail the build on findings. A successful Docker push is not the end of this pipeline; confirm that the **Update Deployment** stage also pushed a Git commit.
 
 After the image push, capture the Docker Hub **Tags** page with the same build number as `docs/images/08-dockerhub-build-tag.png`. After the manifest push, capture the GitHub commit or updated `k8s/deployment.yaml` as `docs/images/09-github-manifest-commit.png`.
-
-![Docker Hub ivolve-app image repository](docs/images/03-dockerhub-repository.jpeg)
 
 The unit tests can also be run locally from the project root:
 
@@ -289,7 +321,9 @@ kubectl get application ivolve -n argocd \
 
 Expected source is this project repository with path `k8s`; after reconciliation, expected status is `Synced | Healthy`.
 
-Add an Argo CD Application details screenshot as `docs/images/10-argocd-healthy-synced.png`. Show the repository, revision `main`, path `k8s`, namespace `ivolve`, and **Healthy / Synced** status.
+The Argo CD capture below shows automatic synchronization and a successful sync. Use the verification command above to confirm this project's repository and `k8s` path; add a fresh Application details capture as `docs/images/10-argocd-healthy-synced.png` showing the repository, revision `main`, path `k8s`, namespace `ivolve`, and **Healthy / Synced** status.
+
+![Argo CD application successfully synced with automatic sync enabled](docs/images/argocd-healthy-synced.png)
 
 ## 8. Follow a change from Git to the running app
 
@@ -319,11 +353,11 @@ kubectl get deployment ivolveapp -n ivolve \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="ivolve-app")].image}{"\n"}'
 ```
 
-The current cluster captures are shown below. Add a fresh final-run capture as `docs/images/11-kubernetes-final-rollout.png` showing the Deployment at `2/2`, app and MySQL Pods running, and the image tag matching Docker Hub and Git.
+The cluster verification captures below show the nodes and workloads running. Add a fresh final-run capture as `docs/images/11-kubernetes-final-rollout.png` showing the Deployment at `2/2`, app and MySQL Pods running, and the image tag matching Docker Hub and Git.
 
-![Kubernetes nodes and running Argo CD and ivolve Pods](docs/images/05-kubernetes-app-running.png)
+![Kubernetes nodes and application Pods running](docs/images/05-kubernetes-app-running.png)
 
-![Successful Kubernetes rollout and Argo CD health](docs/images/06-kubernetes-app-running.png)
+![Successful Kubernetes rollout with app and database Pods](docs/images/06-kubernetes-app-running.png)
 
 Check application logs and the database endpoint if readiness does not complete:
 

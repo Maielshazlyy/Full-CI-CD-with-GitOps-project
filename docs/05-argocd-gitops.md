@@ -80,6 +80,8 @@ kubectl get deployment ivolveapp -n ivolve \
 
 The image shown by the last command should match the build tag Jenkins pushed.
 
+![Argo CD reports a successful sync with automatic synchronization enabled](images/argocd-healthy-synced.png)
+
 ## Troubleshooting
 
 - **Argo app is OutOfSync:** verify repository URL, branch, path, and that Jenkins really pushed the manifest commit.

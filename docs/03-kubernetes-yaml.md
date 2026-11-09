@@ -37,3 +37,21 @@ kubectl describe deployment ivolveapp -n ivolve
 - **Persistent storage** is provisioned separately. The application mounts the existing claim for logs; MySQL uses its own persistent claim.
 
 The broader platform setup and operational procedures are described in `docs/02-kubeadm-cluster.md` and `docs/05-argocd-gitops.md`.
+
+The prerequisite MySQL StatefulSet and persistent claims were verified before syncing the application. The database check confirms the `ivolve` schema is present:
+
+![MySQL StatefulSet, Service, Pods, and PVCs](images/mysql-statefulset-pvc-running.png)
+
+![MySQL database verification](images/mysql-database-verified.png)
+
+The application log claim is also bound and mounted at `/app/logs`:
+
+![Application log PVC bound](images/application-log-pvc-bound.png)
+
+![Application log volume test](images/application-log-volume-test.png)
+
+The NetworkPolicy selects MySQL and permits TCP `3306` only from application Pods:
+
+![NetworkPolicy rule for application-to-MySQL ingress](images/network-policy-applied.jpg)
+
+![Application Pods connecting to MySQL](images/network-policy-rules.jpg)

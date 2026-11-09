@@ -20,6 +20,8 @@ This only builds the image; it does not connect an agent. In Jenkins, create an 
 
 The agent image intentionally does not include `kubectl` and does not need a kubeconfig. Jenkins publishes the desired manifest change to GitHub; Argo CD detects and applies it from inside the cluster.
 
+![Jenkins node list showing the inbound agent online](images/jenkins-agent-online.png)
+
 The agent needs access to the Docker daemon. In a local lab, that is often a mounted Docker socket and matching permissions. Access to that socket grants powerful control over the Docker host, so use this setup only in the isolated lab environment.
 
 ## Configure the Shared Library
@@ -58,6 +60,10 @@ The GitOps version does not require Jenkins to have a kubeconfig: it pushes a Gi
 4. Click **Build Now**.
 5. In Stage View/Console Output, verify build, scan, Docker push, and Git push succeeded.
 6. If Jenkins says the node has no executor or build is waiting, check agent Online state and executors. If GitHub push is 403, check PAT scope, repository, and credential ID; do not put the token in the Jenkinsfile.
+
+The successful Stage View shows the GitOps update as its own final stage:
+
+![Jenkins pipeline with Build App, Build Scan Push Image, and Update Deployment stages](images/jenkins-pipeline-gitops-success.png)
 
 ## Test result
 

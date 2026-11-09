@@ -124,6 +124,12 @@ kubectl get pods -A
 
 Both nodes should become `Ready`; CoreDNS and CNI Pods should be `Running`.
 
+![Control-plane and worker nodes in Ready state](images/kubeadm-cluster-nodes-ready.jpg)
+
+![Kubernetes control-plane and CoreDNS services running](images/kubeadm-cluster-components-running.png)
+
+![Calico and Kubernetes system Pods running](images/kubeadm-cluster-verification.png)
+
 ## 6. Labels and taints used by the application labs
 
 The worker is labeled so application Pods can select it, and tainted to repel Pods without a matching toleration:
