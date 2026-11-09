@@ -192,44 +192,48 @@ kubectl get deployment ivolveapp -n ivolve \
 
 In Argo CD, confirm the application is **Healthy** and **Synced**, and that the source revision, `k8s` path, and `ivolve` destination match the settings above. For secure UI access through SSH tunneling, see [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md).
 
-## Evidence screenshots
+## Project evidence
 
-Store screenshots in `docs/images/` and embed them in this README at the corresponding evidence point. The names below keep the gallery ordered and explain what each capture should prove.
+All screenshots are stored in `docs/images/`. The architecture diagram appears above; the screenshots below document the Jenkins agent, image repository, GitOps update, Argo CD, and Kubernetes runtime.
 
-| File name | Capture | What it demonstrates |
-|---|---|---|
-| `01-jenkins-controller-agent-online.png` | Docker Desktop/container list showing Jenkins running, plus the Jenkins node page | Controller is running and inbound agent is Online |
-| `02-jenkins-library-job-config.png` | Global Pipeline Library and pipeline job configuration | Library name `ivolve-gitops`, `main` branch, and `Jenkinsfile` script path |
-| `03-jenkins-credentials-ids.png` | Jenkins Credentials listing | `dockerhub-creds` and `github-write-creds` exist; values must remain hidden |
-| `04-jenkins-pipeline-success.png` | Completed Jenkins Stage View | All three stages pass, including **Update Deployment** |
-| `05-dockerhub-image-published.png` | Docker Hub repository tags page | Image tag matches the successful Jenkins build number |
-| `06-argocd-namespace-running.png` | Terminal output of `kubectl get pods -n argocd -o wide` | Argo CD components are running |
-| `07-argocd-repository-connected.png` | Argo CD repository settings/status | The GitHub repository connection succeeds |
-| `08-argocd-application-healthy.png` | Argo CD `ivolve` application details | Application is **Healthy** and **Synced**, with correct repo, revision, path, and namespace |
-| `09-kubernetes-app-pods-running.png` | Terminal output of `kubectl get deployment,pods,service -n ivolve -o wide` | Application Deployment, Pods, and Service are running with the expected image |
+### Jenkins inbound agent
 
-The architecture image is stored at `docs/images/full-cicd-gitops-architecture.png` and is already embedded above.
+The agent page confirms that `lab22-agent` is connected to Jenkins.
 
-Only the Argo CD and Kubernetes evidence already published with the standalone Lab 23 README is currently referenced below. Add the Jenkins, credential-list, and Docker Hub captures to `docs/images/` as listed above, then embed them with this pattern:
+![Jenkins lab22-agent connected](docs/images/01-jenkins-agent-online.png)
 
-```markdown
-![Jenkins pipeline completed successfully](docs/images/04-jenkins-pipeline-success.png)
-```
+### Docker Hub image repository
 
-### Existing Argo CD and Kubernetes evidence
+This capture confirms that the public `maielshazly/ivolve-app` image repository exists. It does not show an individual tag; capture the Tags page for build-specific proof.
 
-These captures are reused from the Lab 23 submission. Replace them with project-specific captures if the repository, branch, or image tag changes.
+![Docker Hub ivolve-app repository](docs/images/03-dockerhub-repository.jpeg)
 
-<p align="center"><strong>Argo CD application and synchronization</strong></p>
-<img src="https://github.com/user-attachments/assets/94353f14-0e22-44a5-b66b-80e1a8a76ca1" alt="Argo CD application evidence from Lab 23" width="100%" />
+### GitOps manifest update log — earlier repository
 
-<p align="center"><strong>Argo CD resource and GitOps evidence</strong></p>
-<img src="https://github.com/user-attachments/assets/a5f622c3-4a27-4d61-826f-7667eb6ca779" alt="Argo CD GitOps evidence from Lab 23" width="100%" />
+This Jenkins log is retained as history. It pushes the image tag to `jenkins-lab-22.git`, so it does **not** prove an update to this consolidated project repository. Replace it with a successful pipeline log that pushes to `Full-CI-CD-with-GitOps-project.git`.
 
-<p align="center"><strong>Kubernetes deployment verification</strong></p>
-<img src="https://github.com/user-attachments/assets/23ecb046-65e1-4f3d-848c-9c95201fb01c" alt="Kubernetes application verification from Lab 23" width="100%" />
+![Earlier Jenkins manifest update log](docs/images/02-github-manifest-update-legacy-repo.png)
 
-Do not include Jenkins agent secrets, tokens, passwords, kubeconfig contents, database Secret values, or private keys in screenshots.
+### Argo CD application — earlier repository state
+
+This Argo CD resource-tree capture shows a healthy, synced application, but it was captured before the Application source was switched to the consolidated repository. Replace it with a fresh details view showing this repository, path `k8s`, and **Healthy / Synced**.
+
+![Argo CD healthy application from earlier repository state](docs/images/04-argocd-healthy-synced-previous-repo.png)
+
+### Kubernetes workloads
+
+This terminal capture records the cluster and application Pods in a running state. The latest rollout verification should also show the Deployment at `2/2` and the image tag currently recorded in Git.
+
+![Kubernetes nodes and application workloads](docs/images/05-kubernetes-app-running.png)
+
+### Evidence still to capture for the current GitOps run
+
+- Jenkins Stage View showing a successful **Update Deployment** from this repository.
+- Docker Hub **Tags** page showing the same build tag published by Jenkins.
+- Argo CD application details showing this repository, `k8s`, and **Healthy / Synced**.
+- Kubernetes Deployment and Pods showing `2/2` and the matching image tag.
+
+Never include Jenkins agent secrets, tokens, passwords, kubeconfig contents, database Secret values, or private keys in screenshots.
 
 ## Documentation
 
