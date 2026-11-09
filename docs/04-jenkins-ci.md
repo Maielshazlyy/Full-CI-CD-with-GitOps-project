@@ -10,13 +10,15 @@
 
 ## Build the agent image
 
-From the repository root, the lab Dockerfile packages an inbound agent, Node.js/npm, Docker tooling, kubectl, and Trivy:
+From the repository root, the agent Dockerfile packages the inbound-agent base, Node.js/npm, Docker tooling, and Trivy:
 
 ```powershell
 docker build -t ivolve-jenkins-agent:lab23 -f agent/Dockerfile agent
 ```
 
 This only builds the image; it does not connect an agent. In Jenkins, create an inbound node named `lab22-agent` with a remote work directory, obtain its connection secret from the node page, and start an agent container/process using the Jenkins URL, exact node name, secret, and WebSocket/TCP mode selected in Jenkins. Keep the secret out of shell history, Git, and screenshots. Confirm the node page says **Online**.
+
+The agent image intentionally does not include `kubectl` and does not need a kubeconfig. Jenkins publishes the desired manifest change to GitHub; Argo CD detects and applies it from inside the cluster.
 
 The agent needs access to the Docker daemon. In a local lab, that is often a mounted Docker socket and matching permissions. Access to that socket grants powerful control over the Docker host, so use this setup only in the isolated lab environment.
 
