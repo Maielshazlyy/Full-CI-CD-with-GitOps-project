@@ -1,77 +1,76 @@
-# Full CI/CD with GitOps
+# Full CI/CD GitOps Project
 
-An end-to-end delivery project for a Node.js application backed by MySQL. Docker Compose supports local development; Jenkins tests the app, builds and scans its image, and publishes the desired image tag to Git; Argo CD synchronizes that Git state to Kubernetes.
+An end-to-end delivery workflow for a Node.js application backed by MySQL. Docker Compose runs the application and database locally. Jenkins builds, tests, scans, and publishes a versioned application image, then commits that image tag to GitHub. Argo CD watches the Kubernetes manifests in Git and reconciles the cluster automatically.
 
-**Core design:** Jenkins does not deploy to the cluster with `kubectl`. Jenkins updates Git, and Argo CD performs the deployment reconciliation.
+> **GitOps boundary:** Jenkins does not run `kubectl` and does not need a Kubernetes kubeconfig. Jenkins publishes the desired state to Git; Argo CD applies it to Kubernetes.
 
-## Architecture
+## Contents
 
-![Full CI/CD GitOps architecture](docs/images/full-cicd-gitops-architecture.png)
+- [What the project builds](#what-the-project-builds)
+- [Repository map](#repository-map)
+- [1. Run the app and database locally](#1-run-the-app-and-database-locally)
+- [2. Prepare the Kubernetes cluster](#2-prepare-the-kubernetes-cluster)
+- [3. Prepare the application namespace and MySQL](#3-prepare-the-application-namespace-and-mysql)
+- [4. Configure Jenkins and its agent](#4-configure-jenkins-and-its-agent)
+- [5. Configure the Shared Library and credentials](#5-configure-the-shared-library-and-credentials)
+- [6. Create and run the Jenkins pipeline](#6-create-and-run-the-jenkins-pipeline)
+- [7. Install and configure Argo CD](#7-install-and-configure-argo-cd)
+- [8. Follow a change from Git to the running app](#8-follow-a-change-from-git-to-the-running-app)
+- [9. Verify the finished deployment](#9-verify-the-finished-deployment)
+- [Troubleshooting](#troubleshooting)
+- [Screenshots and evidence](#screenshots-and-evidence)
+- [Security notes](#security-notes)
 
-The Jenkins agent sends the versioned image to Docker Hub and separately commits the image reference to GitHub. Argo CD watches `k8s/` and reconciles the application resources in Kubernetes. MySQL and shared cluster prerequisites are provisioned separately from this GitOps application.
-
-<details>
-<summary>View the editable Mermaid architecture source</summary>
+## What the project builds
 
 ```mermaid
 flowchart LR
-    Dev[Developer] --> Git[GitHub application repository]
-    Git --> Jenkins[Jenkins controller]
-    Jenkins --> Agent[Jenkins inbound agent]
-    Agent --> Test[Build and unit tests]
-    Test --> Image[Docker build]
-    Image --> Scan[Trivy vulnerability scan]
-    Scan --> Hub[Docker Hub]
-    Agent -->|Commit new image tag| Git
-    Git -->|Watch k8s/| Argo[Argo CD]
-    Argo -->|Auto-sync desired state| K8s[Kubernetes cluster]
-    K8s --> App[Node.js application]
-    App --> DB[MySQL]
+    Dev[Developer change] --> AppRepo[GitHub application and manifests]
+    AppRepo --> Jenkins[Jenkins controller]
+    Jenkins --> Agent[Inbound build agent]
+    Agent --> Tests[Install, unit tests, syntax check]
+    Tests --> Build[Build Docker image]
+    Build --> Scan[Trivy scan]
+    Scan --> Registry[Docker Hub]
+    Agent -->|Commit updated image tag| AppRepo
+    AppRepo -->|Argo CD watches k8s/| Argo[Argo CD]
+    Argo -->|Automatic reconciliation| Cluster[Kubernetes]
+    Cluster --> App[Node.js application]
+    App --> MySQL[MySQL StatefulSet]
 ```
 
-</details>
+The application serves a web UI on port `3000`, connects to MySQL, exposes `/health` and `/ready`, and writes access logs under `/app/logs`. MySQL is a separate service with persistent storage. In the cluster, the database and shared prerequisites are established before Argo CD deploys the application.
 
-The repository's `k8s/` directory contains the application Deployment, ClusterIP Service, and database NetworkPolicy. The namespace, MySQL StatefulSet and headless Service, ConfigMap, Secret, and persistent volumes are prerequisites managed separately in the cluster.
-
-## Delivery workflow
-
-1. Develop and run the app with MySQL locally through Docker Compose.
-2. Jenkins checks out the repository and runs the pipeline on the `lab22-agent` inbound agent.
-3. The `Build App` Shared Library step installs dependencies, runs unit tests, and checks the Node.js syntax.
-4. `Build, Scan, Push Image` builds `maielshazly/ivolve-app:<BUILD_NUMBER>`, scans it with Trivy, pushes it to Docker Hub, then removes the local image tag.
-5. `Update Deployment` replaces the image tag in `k8s/deployment.yaml`, commits the manifest, and pushes the commit to `main`.
-6. Argo CD notices the new commit and automatically reconciles the `ivolve` application.
-7. Kubernetes rolls out Pods using the image version recorded in Git.
-
-Trivy is configured with `--exit-code 0`, so findings are reported but do not currently fail the build. A future hardening step is to make high and critical findings block image publication.
-
-## Repository layout
+## Repository map
 
 ```text
 .
-├── agent/Dockerfile          # Jenkins inbound agent tools
-├── argocd/application.yaml   # Argo CD Application manifest
-├── docs/                     # Setup, operations, and troubleshooting guides
-│   └── images/               # Project evidence screenshots
-├── frontend/                 # Static app UI and assets
-├── k8s/                      # GitOps-managed app resources
+├── agent/Dockerfile          # Jenkins inbound agent image and build tools
+├── argocd/application.yaml   # Argo CD Application definition
+├── docs/                     # Detailed setup guides
+│   └── images/               # Inline screenshots and architecture figure
+├── frontend/                 # Static web application files
+├── k8s/                      # App Deployment, Service, and NetworkPolicy
 ├── vars/                     # Jenkins Shared Library steps
-├── Dockerfile                # Node.js application image
-├── docker-compose.yml        # Local app + MySQL stack
-├── Jenkinsfile               # CI and GitOps stages
-├── db.js / db-check.js       # MySQL access and unit-test helper
+├── Dockerfile                # Node.js app image
+├── docker-compose.yml        # Local app + MySQL services
+├── Jenkinsfile               # CI/GitOps pipeline stages
+├── db.js / db-check.js       # Database access and test helper
 ├── server.js                 # Express app and health endpoints
 └── package.json              # Node dependencies and scripts
 ```
 
-## Run locally with Docker Compose
+More detailed platform notes are in [Docker Compose](docs/01-docker-compose.md), [kubeadm](docs/02-kubeadm-cluster.md), [Kubernetes manifests](docs/03-kubernetes-yaml.md), [Jenkins](docs/04-jenkins-ci.md), and [Argo CD](docs/05-argocd-gitops.md).
+
+## 1. Run the app and database locally
 
 ### Requirements
 
-- Docker Desktop or Docker Engine with Docker Compose
-- Node.js is optional for local development; the app runs in its container
+- Git
+- Docker Desktop or Docker Engine with the Compose plugin
+- Node.js only if you want to run the unit tests outside Jenkins
 
-Create a local environment file from the template, then set strong local-only passwords:
+From the repository root, create a local environment file and replace its placeholder passwords. Do not commit `.env`.
 
 ```powershell
 Copy-Item .env.example .env
@@ -79,168 +78,318 @@ notepad .env
 docker compose config
 docker compose up -d --build
 docker compose ps
+```
+
+Compose starts two services:
+
+1. `db` starts MySQL and becomes healthy when `mysqladmin ping` succeeds.
+2. `app` starts after the database health check. It connects to host `db`, the Compose service DNS name, on the internal network `ivolve-net`.
+3. `db_data` persists MySQL data and `app_logs` persists application logs across container replacement.
+
+Open [http://localhost:3000](http://localhost:3000), then check the health endpoint at [http://localhost:3000/health](http://localhost:3000/health). To inspect application output:
+
+```powershell
 docker compose logs -f app
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The app's `/health` and `/ready` endpoints check application/database availability.
-
-Stop the containers while retaining named-volume data:
+Stop the services but keep their data:
 
 ```powershell
 docker compose down
 ```
 
-To also delete the local MySQL and log volumes:
+Remove the named volumes only when you intend to delete the local database and logs:
 
 ```powershell
 docker compose down -v
 ```
 
-The `.env` file is ignored by Git. Never put real passwords in the README, manifests, screenshots, or commits.
+## 2. Prepare the Kubernetes cluster
 
-## Kubernetes platform and application
+The lab cluster consists of Ubuntu EC2 control-plane and worker nodes, kubeadm, containerd, and Calico. The project depends on that cluster; it does not provision EC2 or bootstrap Kubernetes automatically.
 
-The project cluster uses kubeadm on Ubuntu, containerd as the runtime, and Calico for Pod networking. The worker is labeled `project=ivolve` and tainted `workload=ivolveApp:NoSchedule`; the application Deployment selects that node and tolerates that taint.
+Follow [the cluster setup guide](docs/02-kubeadm-cluster.md) for the full node preparation and kubeadm sequence. In brief, the setup is:
 
-Before Argo CD syncs the app resources, the cluster must already have:
+1. Put both EC2 instances in the same VPC and allow only the required traffic between them. Limit SSH and Kubernetes API access to trusted sources.
+2. Disable swap and configure kernel modules, forwarding, and bridge networking on both nodes.
+3. Install and configure containerd with the systemd cgroup driver.
+4. Install matching `kubelet`, `kubeadm`, and `kubectl` versions on both nodes.
+5. Run `kubeadm init` on the control-plane, configure the admin user's kubeconfig, install Calico, and join the worker with the generated join command.
+6. Wait until both nodes report `Ready`, then apply the project scheduling label and taint to the worker.
 
-- Namespace `ivolve` and sufficient ResourceQuota capacity
-- ConfigMap `ivolvcm` with `DB_HOST` and `DB_USER`
-- Secret `ivolvesecret` with `DB_PASSWORD` and `MYSQL_ROOT_PASSWORD`
-- MySQL StatefulSet `ivolvedb` and headless Service `ivolvedbsvc`
-- PersistentVolumeClaim `ivolvepvc` for application logs
-
-The Deployment's init container waits for MySQL and creates the `ivolve` database/application user. The application receives connection settings from the ConfigMap and Secret. The NetworkPolicy permits MySQL ingress on TCP 3306 from the application Pods.
-
-Inspect the GitOps-managed resources after synchronization:
+Example verification and worker scheduling setup (replace the node names if yours differ):
 
 ```bash
-kubectl get deployment,pods,service,networkpolicy -n ivolve -o wide
-kubectl get deployment ivolveapp -n ivolve \
-  -o jsonpath='{.spec.template.spec.containers[?(@.name=="ivolve-app")].image}{"\n"}'
+kubectl get nodes -o wide
+kubectl get pods -A
+kubectl label node <worker-node-name> project=ivolve --overwrite
+kubectl taint node <worker-node-name> workload=ivolveApp:NoSchedule --overwrite
+kubectl get nodes --show-labels
+kubectl describe node <worker-node-name> | grep -i taints
 ```
 
-The image tag in the output should match the latest successful Jenkins build and the image tag committed in `k8s/deployment.yaml`.
+The app's `nodeSelector` chooses `project=ivolve`; its toleration permits the `workload=ivolveApp:NoSchedule` taint. These settings control placement but do not add CPU or memory. This lab's small EC2 nodes can become resource constrained, so verify capacity before installing optional monitoring or increasing workloads.
 
-## Jenkins setup
+## 3. Prepare the application namespace and MySQL
 
-### Controller, inbound agent, and tools
+The Argo CD application in this repository owns only the manifests in `k8s/`. Prepare the database and shared resources separately before creating or syncing the Argo CD application.
 
-Run the Jenkins controller and confirm that it is available before configuring the job. Build the separate inbound agent image from the repository root:
+Required resources in namespace `ivolve`:
+
+- Namespace `ivolve` and enough ResourceQuota capacity for the database plus two app replicas.
+- ConfigMap `ivolvcm` with `DB_HOST=ivolvedbsvc` and `DB_USER=ivolve_user`.
+- Secret `ivolvesecret` containing `MYSQL_ROOT_PASSWORD` and `DB_PASSWORD`.
+- MySQL StatefulSet `ivolvedb` and headless Service `ivolvedbsvc`.
+- Bound PVC `ivolvepvc` for the application's `/app/logs` mount.
+
+Use the existing database and storage manifests from the Kubernetes work to create these prerequisites. Never copy real Secret values into this repository. Check that database DNS and the claim work before app deployment:
+
+```bash
+kubectl get namespace ivolve
+kubectl get configmap ivolvcm -n ivolve
+kubectl get secret ivolvesecret -n ivolve
+kubectl get statefulset,service,pvc -n ivolve
+kubectl get pods -n ivolve -o wide
+```
+
+The Deployment's `initialize-database` init container waits for MySQL and ensures the `ivolve` database and application user exist. The application then reads database connection values from the ConfigMap and Secret. The NetworkPolicy allows MySQL ingress on TCP `3306` from Pods labeled `app=ivolveapp`.
+
+> ResourceQuota in the lab limits namespace Pods. Keep the database and app replicas within the quota. The Deployment uses `maxSurge: 0` and `maxUnavailable: 1` so a rolling update can replace app Pods without temporarily exceeding the Pod quota.
+
+## 4. Configure Jenkins and its agent
+
+### Start the Jenkins controller
+
+Run Jenkins using the controller setup you already use for the lab. Confirm the UI is reachable, sign in with the administrator account, and ensure the controller container is healthy before configuring the agent. Keep the Jenkins home volume persistent so jobs, credentials, plugins, and configuration survive a restart.
+
+### Build the inbound agent image
+
+From the repository root:
 
 ```powershell
 docker build -t ivolve-jenkins-agent:gitops -f agent/Dockerfile agent
 ```
 
-Create an inbound Jenkins node named `lab22-agent`, set its remote work directory and executor count, and connect the agent using the Jenkins-generated secret. Keep the secret out of source control and screenshots. The node should show **Online** before a build is scheduled.
+The agent image includes Java from the inbound-agent base, Node.js/npm, Docker CLI, and Trivy. The agent connects to Jenkins over WebSocket. Docker access uses the local Docker socket in this lab setup.
 
-The agent image includes Node.js/npm, Docker tooling, and Trivy. It deliberately does **not** install `kubectl`: the GitOps pipeline does not call `kubectl`, and the agent needs no Kubernetes kubeconfig. Docker commands use the Docker engine/socket configured for the agent in this isolated lab environment.
+### Create and connect the agent
 
-### Shared Library
+In Jenkins:
 
-In **Manage Jenkins → System → Global Pipeline Libraries**, configure:
+1. Open **Manage Jenkins → Nodes → New Node**.
+2. Name it `lab22-agent`, select **Permanent Agent**, and create it.
+3. Set the remote root directory to `/home/jenkins/agent`, set at least one executor, and assign the label `lab22-agent`.
+4. Save, open the node page, and use its generated inbound-agent command/secret to start the agent container with the image above.
+5. Confirm the node page says **Agent is connected** or **Online** before starting a build.
 
-- **Name:** `ivolve-gitops` (must match `@Library('ivolve-gitops')` in `Jenkinsfile`)
-- **Default version:** `main`
-- **Retrieval method:** Modern SCM / Git
-- **Project repository:** this GitHub repository
+Do not put the agent secret in Git, README, screenshots, or shell history. The `Jenkinsfile` schedules its build on `lab22-agent`.
 
-The `vars/` directory contains the global steps `BuildApp`, `BuildImage`, and `UpdateDeployment`. Keeping the GitOps step named `UpdateDeployment` makes its responsibility distinct from a direct Kubernetes deployment helper.
+![Jenkins inbound agent connected](docs/images/01-jenkins-agent-online.png)
 
-### Jenkins credentials
+### Why this agent has no kubectl
 
-Create these credentials in Jenkins' Credentials store. The README records credential IDs only; never capture or publish credential values.
+The Jenkins agent runs CI tasks and pushes an image and manifest commit. It does not apply Kubernetes YAML. Argo CD runs in the cluster and performs that reconciliation, so a Jenkins kubeconfig and `kubectl` are not needed for this workflow.
 
-- **`dockerhub-creds`** — Username with a Docker Hub access token as the password; used only to log in and push the image.
-- **`github-write-creds`** — GitHub username with a fine-grained token as the password; grant repository Contents read/write on this project repository so Jenkins can push the manifest commit.
+## 5. Configure the Shared Library and credentials
 
-The repository is public, so Argo CD can read it without repository credentials. If you make it private, configure a read-only repository credential in Argo CD separately. Do not use a Jenkins kubeconfig credential for this GitOps flow.
+### Register the Global Pipeline Library
 
-### Pipeline job and verification
+In Jenkins, open **Manage Jenkins → System → Global Pipeline Libraries** and add:
 
-Create a Pipeline-from-SCM job or Multibranch Pipeline using this repository, branch `main`, and script path `Jenkinsfile`. The Jenkinsfile selects agent label `lab22-agent` and runs:
+- **Name:** `ivolve-gitops` — this must match the `@Library('ivolve-gitops')` annotation in `Jenkinsfile`.
+- **Default version:** `main`.
+- **Retrieval method:** Modern SCM → Git.
+- **Project repository:** this project's GitHub clone URL.
+- **Credentials:** add read credentials if the source repository is private.
 
-```text
-Build App → Build, Scan, Push Image → Update Deployment
+Save the configuration. Jenkins loads the reusable global steps from the library repository's root `vars/` directory. This project has `BuildApp.groovy`, `BuildImage.groovy`, and `UpdateDeployment.groovy`.
+
+### Add credentials in Jenkins
+
+Open **Manage Jenkins → Credentials → System → Global credentials → Add Credentials**. Use these IDs exactly because the pipeline refers to them:
+
+| ID | Type | Value and scope |
+|---|---|---|
+| `dockerhub-creds` | Username with password | Docker Hub username; use a Docker Hub access token as the password. Allow image push to `maielshazly/ivolve-app`. |
+| `github-write-creds` | Username with password | GitHub username; use a fine-grained token as the password. Grant Contents read/write to this project repository so Jenkins can update `k8s/deployment.yaml`. |
+
+Store the credentials in Jenkins only. Never paste the tokens in the Jenkinsfile, image, README, screenshot, or Git history. Argo CD can read this public repository without credentials; for a private repository, configure a separate read-only Git credential in Argo CD.
+
+## 6. Create and run the Jenkins pipeline
+
+Create a **Pipeline** job in Jenkins:
+
+1. Select **Pipeline script from SCM**.
+2. Choose **Git**, enter this repository's URL, and set branch to `*/main`.
+3. Set **Script Path** to `Jenkinsfile`.
+4. Save and click **Build Now**.
+
+The pipeline runs on `lab22-agent` in these stages:
+
+1. **Build App** — `BuildApp()` installs npm dependencies, runs `npm test`, and checks JavaScript syntax with `node --check server.js`.
+2. **Build, Scan, Push Image** — `BuildImage()` builds `maielshazly/ivolve-app:<BUILD_NUMBER>`, scans it with Trivy, authenticates using `dockerhub-creds`, pushes it to Docker Hub, logs out, and removes the local tag.
+3. **Update Deployment** — `UpdateDeployment()` changes the image field in `k8s/deployment.yaml` to the build tag, commits the manifest change, and pushes it to `main` using `github-write-creds`.
+
+Trivy currently uses `--exit-code 0`: it reports High/Critical vulnerabilities but does not fail the build on findings. A successful Docker push is not the end of this pipeline; confirm that the **Update Deployment** stage also pushed a Git commit.
+
+The unit tests can also be run locally from the project root:
+
+```powershell
+npm install
+npm test
 ```
 
-After **Build Now**, verify all stages succeed. In the final stage, confirm Jenkins commits and pushes the updated image tag. An image push alone is not a complete GitOps delivery: the manifest commit must also reach GitHub.
+## 7. Install and configure Argo CD
 
-## Argo CD setup and verification
+### Install Argo CD
 
-Install Argo CD into namespace `argocd`, wait for its server, repo server, Redis, application controller, and supporting Pods to become Ready, then connect the project repository. The declarative reference is [`argocd/application.yaml`](argocd/application.yaml).
-
-The `ivolve` Application settings are:
-
-- **Repository:** `https://github.com/Maielshazlyy/Full-CI-CD-with-GitOps-project.git`
-- **Revision:** `main`
-- **Manifest path:** `k8s`
-- **Destination:** in-cluster Kubernetes API, namespace `ivolve`
-- **Sync policy:** automated sync and self-heal enabled; pruning disabled
-
-Do not create a second `ivolve` Application if one already exists. Update the existing application's source when switching repositories. Argo CD manages only the resources under `k8s/`; cluster prerequisites listed above remain separately managed.
-
-Verify the application and its live image:
+Install Argo CD on a responsive cluster. If the API server is timing out, first check `free -h`, `uptime`, disk I/O, and node readiness instead of repeatedly applying the installation manifest.
 
 ```bash
-kubectl get applications.argoproj.io ivolve -n argocd
+kubectl create namespace argocd
+kubectl apply --server-side --force-conflicts -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 kubectl get pods -n argocd -o wide
-kubectl get deployment,pods,service -n ivolve -o wide
+```
+
+Wait for the Argo CD server, repo server, Redis, and application controller Pods to become Ready. If cluster taints prevent scheduling, configure explicit tolerations on the Argo CD components that must run there; do not remove node taints globally just to bypass scheduling.
+
+### Open the Argo CD UI securely
+
+Use an SSH tunnel rather than exposing Argo CD publicly. Start a port-forward on the control-plane using an authorized kubeconfig, then create an SSH local forward from the workstation. Detailed commands and troubleshooting for the lab's API-server endpoint are in [the Argo CD guide](docs/05-argocd-gitops.md). Keep both tunnel processes running while using the UI.
+
+### Create or update the `ivolve` Application
+
+The declarative definition is [`argocd/application.yaml`](argocd/application.yaml). Its key settings are:
+
+- **Name:** `ivolve`
+- **Repository:** `https://github.com/Maielshazlyy/Full-CI-CD-with-GitOps-project.git`
+- **Revision:** `main`
+- **Path:** `k8s`
+- **Destination:** in-cluster Kubernetes, namespace `ivolve`
+- **Sync policy:** automated sync with self-heal; pruning is disabled
+
+Create the Application once, or update the existing `ivolve` Application to use this repository. Do not create multiple Applications with the same name. The `k8s/` directory must contain valid manifests and the namespace prerequisites must already exist.
+
+Verify the live Application source and status:
+
+```bash
+kubectl get application ivolve -n argocd \
+  -o jsonpath='{.spec.source.repoURL}{" | "}{.spec.source.path}{"\n"}{.status.sync.status}{" | "}{.status.health.status}{"\n"}'
+```
+
+Expected source is this project repository with path `k8s`; after reconciliation, expected status is `Synced | Healthy`.
+
+## 8. Follow a change from Git to the running app
+
+This is the end-to-end release loop:
+
+1. Make an application change and push it to the source repository's `main` branch.
+2. Start the Jenkins pipeline (or later connect a GitHub webhook to trigger it automatically).
+3. Jenkins checks out the source on the inbound agent, runs the unit tests and syntax check, builds the container image, scans it, and pushes a build-number tag to Docker Hub.
+4. Jenkins changes the image reference in `k8s/deployment.yaml` and pushes a Git commit to `main`.
+5. Argo CD detects the new Git revision and automatically syncs the `k8s/` manifests.
+6. Kubernetes rolls out Pods for the new image. The app's init container waits for MySQL and provisions the expected database/user before the app starts.
+7. Confirm the Argo CD Application is **Synced** and **Healthy**, the Deployment is ready, and the live image tag matches both Docker Hub and Git.
+
+If Jenkins completes the image push but fails during the Git push, Argo CD has no new desired state to apply. Fix the GitHub credential/repository permissions, then rerun the pipeline.
+
+## 9. Verify the finished deployment
+
+Run on the cluster with an authorized `kubectl` identity:
+
+```bash
+kubectl get nodes -o wide
+kubectl get pods -n argocd -o wide
+kubectl get application ivolve -n argocd
+kubectl get deployment,pods,service,networkpolicy -n ivolve -o wide
+kubectl rollout status deployment/ivolveapp -n ivolve --timeout=180s
 kubectl get deployment ivolveapp -n ivolve \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="ivolve-app")].image}{"\n"}'
 ```
 
-In Argo CD, confirm the application is **Healthy** and **Synced**, and that the source revision, `k8s` path, and `ivolve` destination match the settings above. For secure UI access through SSH tunneling, see [`docs/05-argocd-gitops.md`](docs/05-argocd-gitops.md).
+Check application logs and the database endpoint if readiness does not complete:
 
-## Project evidence
+```bash
+kubectl logs -n ivolve -l app=ivolveapp -c ivolve-app --tail=50
+kubectl get endpointslice -n ivolve -l kubernetes.io/service-name=ivolvedbsvc
+kubectl get events -n ivolve --sort-by=.lastTimestamp | tail -20
+```
 
-All screenshots are stored in `docs/images/`. The architecture diagram appears above; the screenshots below document the Jenkins agent, image repository, GitOps update, Argo CD, and Kubernetes runtime.
+The app image reported by the Deployment should equal the latest image tag in `k8s/deployment.yaml` and the corresponding tag published to Docker Hub. In Argo CD, confirm the same repository, revision, path, destination, **Synced** status, and **Healthy** status.
 
-### Jenkins inbound agent
+## Troubleshooting
 
-The agent page confirms that `lab22-agent` is connected to Jenkins.
+| Symptom | What to check |
+|---|---|
+| Jenkins build stays queued | Check that `lab22-agent` is Online, has an executor, and the job uses the `lab22-agent` label. |
+| Jenkins cannot load `@Library` | Confirm the Global Pipeline Library name is exactly `ivolve-gitops`, its Git URL/branch are correct, and Jenkins can read the repository. |
+| Docker push is denied | Check `dockerhub-creds`, access token validity, and write access to `maielshazly/ivolve-app`. |
+| Git push returns 403 | Check `github-write-creds` and the token's Contents read/write permission for this repository. Verify the failure is not a read-only or wrong-repository token. |
+| Argo CD remains OutOfSync | Confirm it tracks this repository, `main`, and `k8s`; then check that Jenkins pushed its image-tag commit. |
+| Argo CD is Synced but not Healthy | Inspect Pod events, quota, taints, PVC binding, ConfigMap/Secret presence, MySQL connectivity, and image pull status. |
+| App Deployment shows fewer than 2 replicas | Check ResourceQuota and node capacity; this lab's quota is small. Inspect `kubectl describe deployment ivolveapp -n ivolve`. |
+| Argo UI or `kubectl` is slow | Check API server readiness and node memory/CPU/I/O. The lab nodes are small; stop optional workloads if needed. |
 
-![Jenkins lab22-agent connected](docs/images/01-jenkins-agent-online.png)
+## Screenshots and evidence
 
-### Docker Hub image repository
+Screenshots are embedded below so they appear directly in GitHub's README preview. The architecture graphic is generated for this project.
 
-This capture confirms that the public `maielshazly/ivolve-app` image repository exists. It does not show an individual tag; capture the Tags page for build-specific proof.
+### Architecture
+
+![Architecture: Jenkins CI, Docker Hub, GitOps repository, Argo CD, and Kubernetes](docs/images/full-cicd-gitops-architecture.png)
+
+### Jenkins agent connected
+
+The screenshot shows the inbound agent connected. Capture again if the agent name or configuration has changed.
+
+![Jenkins lab22-agent online](docs/images/01-jenkins-agent-online.png)
+
+### Docker Hub repository
+
+This confirms the application image repository exists. A **Tags** screenshot from the latest successful build is still needed to prove the exact pushed build tag.
 
 ![Docker Hub ivolve-app repository](docs/images/03-dockerhub-repository.jpeg)
 
-### GitOps manifest update log — earlier repository
+### Kubernetes cluster and final rollout
 
-This Jenkins log is retained as history. It pushes the image tag to `jenkins-lab-22.git`, so it does **not** prove an update to this consolidated project repository. Replace it with a successful pipeline log that pushes to `Full-CI-CD-with-GitOps-project.git`.
+The first capture shows the cluster and system/ivolve Pods running. The second shows a completed `2/2` app rollout and Argo CD `Synced / Healthy`; it currently records image `:lab8`, so capture a fresh version after the latest Jenkins build to show the new build tag.
 
-![Earlier Jenkins manifest update log](docs/images/02-github-manifest-update-legacy-repo.png)
+![Kubernetes nodes and running Argo CD and ivolve Pods](docs/images/05-kubernetes-app-running.png)
 
-### Argo CD application — earlier repository state
+![Successful Kubernetes rollout and Argo CD health](docs/images/06-kubernetes-app-running.png)
 
-This Argo CD resource-tree capture shows a healthy, synced application, but it was captured before the Application source was switched to the consolidated repository. Replace it with a fresh details view showing this repository, path `k8s`, and **Healthy / Synced**.
+### New screenshots to add for the final run
 
-![Argo CD healthy application from earlier repository state](docs/images/04-argocd-healthy-synced-previous-repo.png)
+Please add these captures under `docs/images/` and use the suggested names below. Crop out browser address bars containing tokens, terminal prompts with credentials, and unrelated UI:
 
-### Kubernetes workloads
+1. `07-jenkins-pipeline-success.png` — Jenkins Stage View with **Build App**, **Build, Scan, Push Image**, and **Update Deployment** green. Include the final build number if visible.
+2. `08-dockerhub-build-tag.png` — Docker Hub repository **Tags** page showing the same build number/tag as Jenkins.
+3. `09-github-manifest-commit.png` — GitHub commit or `k8s/deployment.yaml` showing the new image tag.
+4. `10-argocd-healthy-synced.png` — Argo CD Application details showing this repository, revision `main`, path `k8s`, namespace `ivolve`, and **Healthy / Synced**.
+5. `11-kubernetes-final-rollout.png` — Terminal showing Deployment `2/2`, app Pods `Running`, MySQL Pod `Running`, and the live app image tag matching items 2 and 3.
 
-This terminal capture records the cluster and application Pods in a running state. The latest rollout verification should also show the Deployment at `2/2` and the image tag currently recorded in Git.
+Optional but useful: `12-docker-compose-local.png` showing `docker compose ps` with both `app` and `db` healthy and the app open in the browser. Existing screenshots will then demonstrate local development as well as the final delivery loop.
 
-![Kubernetes nodes and application workloads](docs/images/05-kubernetes-app-running.png)
+Never include passwords, GitHub or Docker Hub tokens, agent secrets, private keys, kubeconfig contents, or decoded Kubernetes Secret data in evidence.
 
+## Security notes
 
-Never include Jenkins agent secrets, tokens, passwords, kubeconfig contents, database Secret values, or private keys in screenshots.
+- `.env` is ignored by Git; `.env.example` contains placeholders only. Use separate strong local passwords.
+- Kubernetes Secret values must be created securely on the cluster and must not be committed as plain YAML.
+- Jenkins credentials are referenced by ID and injected only into the relevant pipeline step.
+- Restrict GitHub token permissions to repository Contents read/write and Docker Hub token permissions to the required image operations.
+- Do not expose Jenkins, Argo CD, Kubernetes API, or Docker socket publicly. The mounted Docker socket provides powerful access to the host and is for this isolated lab environment only.
+- This learning setup is not a production high-availability design. Use hardened secrets management, resource sizing, backups, TLS, access controls, and policy enforcement before production use.
 
-## Documentation
+## Further reading
 
-- [Docker Compose and application/database flow](docs/01-docker-compose.md)
-- [kubeadm cluster setup](docs/02-kubeadm-cluster.md)
-- [Kubernetes resources and apply order](docs/03-kubernetes-yaml.md)
-- [Jenkins Shared Library, credentials, and inbound agent](docs/04-jenkins-ci.md)
-- [Argo CD GitOps delivery](docs/05-argocd-gitops.md)
-
-## Official references
-
-- [Docker Compose](https://docs.docker.com/compose/)
-- [Kubernetes kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/)
-- [Jenkins agents](https://www.jenkins.io/doc/book/using/using-agents/)
+- [Docker Compose guide](docs/01-docker-compose.md)
+- [kubeadm cluster guide](docs/02-kubeadm-cluster.md)
+- [Kubernetes manifests guide](docs/03-kubernetes-yaml.md)
+- [Jenkins CI, agent, and Shared Library guide](docs/04-jenkins-ci.md)
+- [Argo CD GitOps guide](docs/05-argocd-gitops.md)
+- [Docker Compose documentation](https://docs.docker.com/compose/)
+- [kubeadm documentation](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/)
 - [Jenkins Shared Libraries](https://www.jenkins.io/doc/book/pipeline/shared-libraries/)
-- [Argo CD Getting Started](https://argo-cd.readthedocs.io/en/stable/getting_started/)
+- [Argo CD documentation](https://argo-cd.readthedocs.io/en/stable/)
