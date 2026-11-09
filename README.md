@@ -4,6 +4,8 @@ An end-to-end delivery workflow for a Node.js application backed by MySQL. Docke
 
 > **GitOps boundary:** Jenkins does not run `kubectl` and does not need a Kubernetes kubeconfig. Jenkins publishes the desired state to Git; Argo CD applies it to Kubernetes.
 
+![Full CI/CD GitOps architecture](docs/images/full-cicd-gitops-architecture.png)
+
 ## Contents
 
 - [What the project builds](#what-the-project-builds)
@@ -18,7 +20,6 @@ An end-to-end delivery workflow for a Node.js application backed by MySQL. Docke
 - [8. Follow a change from Git to the running app](#8-follow-a-change-from-git-to-the-running-app)
 - [9. Verify the finished deployment](#9-verify-the-finished-deployment)
 - [Troubleshooting](#troubleshooting)
-- [Screenshots and evidence](#screenshots-and-evidence)
 - [Security notes](#security-notes)
 
 ## What the project builds
@@ -91,6 +92,8 @@ Open [http://localhost:3000](http://localhost:3000), then check the health endpo
 ```powershell
 docker compose logs -f app
 ```
+
+For a visual record of the local Compose run, add a screenshot here showing `docker compose ps` with both services healthy and the application open at `localhost:3000`.
 
 Stop the services but keep their data:
 
@@ -224,6 +227,8 @@ Create a **Pipeline** job in Jenkins:
 3. Set **Script Path** to `Jenkinsfile`.
 4. Save and click **Build Now**.
 
+Add the Jenkins Stage View screenshot after a successful run as `docs/images/07-jenkins-pipeline-success.png`. It should show **Build App**, **Build, Scan, Push Image**, and **Update Deployment** green, with the build number visible if possible.
+
 The pipeline runs on `lab22-agent` in these stages:
 
 1. **Build App** — `BuildApp()` installs npm dependencies, runs `npm test`, and checks JavaScript syntax with `node --check server.js`.
@@ -231,6 +236,10 @@ The pipeline runs on `lab22-agent` in these stages:
 3. **Update Deployment** — `UpdateDeployment()` changes the image field in `k8s/deployment.yaml` to the build tag, commits the manifest change, and pushes it to `main` using `github-write-creds`.
 
 Trivy currently uses `--exit-code 0`: it reports High/Critical vulnerabilities but does not fail the build on findings. A successful Docker push is not the end of this pipeline; confirm that the **Update Deployment** stage also pushed a Git commit.
+
+After the image push, capture the Docker Hub **Tags** page with the same build number as `docs/images/08-dockerhub-build-tag.png`. After the manifest push, capture the GitHub commit or updated `k8s/deployment.yaml` as `docs/images/09-github-manifest-commit.png`.
+
+![Docker Hub ivolve-app image repository](docs/images/03-dockerhub-repository.jpeg)
 
 The unit tests can also be run locally from the project root:
 
@@ -280,6 +289,8 @@ kubectl get application ivolve -n argocd \
 
 Expected source is this project repository with path `k8s`; after reconciliation, expected status is `Synced | Healthy`.
 
+Add an Argo CD Application details screenshot as `docs/images/10-argocd-healthy-synced.png`. Show the repository, revision `main`, path `k8s`, namespace `ivolve`, and **Healthy / Synced** status.
+
 ## 8. Follow a change from Git to the running app
 
 This is the end-to-end release loop:
@@ -308,6 +319,12 @@ kubectl get deployment ivolveapp -n ivolve \
   -o jsonpath='{.spec.template.spec.containers[?(@.name=="ivolve-app")].image}{"\n"}'
 ```
 
+The current cluster captures are shown below. Add a fresh final-run capture as `docs/images/11-kubernetes-final-rollout.png` showing the Deployment at `2/2`, app and MySQL Pods running, and the image tag matching Docker Hub and Git.
+
+![Kubernetes nodes and running Argo CD and ivolve Pods](docs/images/05-kubernetes-app-running.png)
+
+![Successful Kubernetes rollout and Argo CD health](docs/images/06-kubernetes-app-running.png)
+
 Check application logs and the database endpoint if readiness does not complete:
 
 ```bash
@@ -330,48 +347,6 @@ The app image reported by the Deployment should equal the latest image tag in `k
 | Argo CD is Synced but not Healthy | Inspect Pod events, quota, taints, PVC binding, ConfigMap/Secret presence, MySQL connectivity, and image pull status. |
 | App Deployment shows fewer than 2 replicas | Check ResourceQuota and node capacity; this lab's quota is small. Inspect `kubectl describe deployment ivolveapp -n ivolve`. |
 | Argo UI or `kubectl` is slow | Check API server readiness and node memory/CPU/I/O. The lab nodes are small; stop optional workloads if needed. |
-
-## Screenshots and evidence
-
-Screenshots are embedded below so they appear directly in GitHub's README preview. The architecture graphic is generated for this project.
-
-### Architecture
-
-![Architecture: Jenkins CI, Docker Hub, GitOps repository, Argo CD, and Kubernetes](docs/images/full-cicd-gitops-architecture.png)
-
-### Jenkins agent connected
-
-The screenshot shows the inbound agent connected. Capture again if the agent name or configuration has changed.
-
-![Jenkins lab22-agent online](docs/images/01-jenkins-agent-online.png)
-
-### Docker Hub repository
-
-This confirms the application image repository exists. A **Tags** screenshot from the latest successful build is still needed to prove the exact pushed build tag.
-
-![Docker Hub ivolve-app repository](docs/images/03-dockerhub-repository.jpeg)
-
-### Kubernetes cluster and final rollout
-
-The first capture shows the cluster and system/ivolve Pods running. The second shows a completed `2/2` app rollout and Argo CD `Synced / Healthy`; it currently records image `:lab8`, so capture a fresh version after the latest Jenkins build to show the new build tag.
-
-![Kubernetes nodes and running Argo CD and ivolve Pods](docs/images/05-kubernetes-app-running.png)
-
-![Successful Kubernetes rollout and Argo CD health](docs/images/06-kubernetes-app-running.png)
-
-### New screenshots to add for the final run
-
-Please add these captures under `docs/images/` and use the suggested names below. Crop out browser address bars containing tokens, terminal prompts with credentials, and unrelated UI:
-
-1. `07-jenkins-pipeline-success.png` — Jenkins Stage View with **Build App**, **Build, Scan, Push Image**, and **Update Deployment** green. Include the final build number if visible.
-2. `08-dockerhub-build-tag.png` — Docker Hub repository **Tags** page showing the same build number/tag as Jenkins.
-3. `09-github-manifest-commit.png` — GitHub commit or `k8s/deployment.yaml` showing the new image tag.
-4. `10-argocd-healthy-synced.png` — Argo CD Application details showing this repository, revision `main`, path `k8s`, namespace `ivolve`, and **Healthy / Synced**.
-5. `11-kubernetes-final-rollout.png` — Terminal showing Deployment `2/2`, app Pods `Running`, MySQL Pod `Running`, and the live app image tag matching items 2 and 3.
-
-Optional but useful: `12-docker-compose-local.png` showing `docker compose ps` with both `app` and `db` healthy and the app open in the browser. Existing screenshots will then demonstrate local development as well as the final delivery loop.
-
-Never include passwords, GitHub or Docker Hub tokens, agent secrets, private keys, kubeconfig contents, or decoded Kubernetes Secret data in evidence.
 
 ## Security notes
 
