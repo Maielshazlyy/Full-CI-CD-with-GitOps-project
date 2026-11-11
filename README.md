@@ -8,7 +8,7 @@ An end-to-end delivery workflow for a Node.js application backed by MySQL. Docke
 
 ## Project Walkthrough
 
-[▶ Watch the 80-second portfolio video](animation/out/full-cicd-portfolio.mp4)
+[▶ Watch the 80-second portfolio video](https://github.com/user-attachments/assets/f108ad36-962f-4f1d-8ea3-acb2d2bd4c66)
 
 ## Contents
 
