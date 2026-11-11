@@ -6,6 +6,10 @@ An end-to-end delivery workflow for a Node.js application backed by MySQL. Docke
 
 ![Full CI/CD GitOps architecture](docs/images/full-cicd-gitops-architecture.png)
 
+## Project Walkthrough
+
+[▶ Watch the 80-second portfolio video](animation/out/full-cicd-portfolio.mp4)
+
 ## Contents
 
 - [What the project builds](#what-the-project-builds)
